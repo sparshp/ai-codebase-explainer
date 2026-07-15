@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+:root {
+  --color-background-primary:   #ffffff;
+  --color-background-secondary: #f5f4f0;
+  --color-background-tertiary:  #eeece6;
+  --color-background-danger:    #fef2f2;
+  --color-text-primary:         #1a1a18;
+  --color-text-secondary:       #6b6a63;
+  --color-text-tertiary:        #9e9c94;
+  --color-text-danger:          #b91c1c;
+  --color-border-tertiary:      #e5e3db;
+  --color-border-secondary:     #c8c6bc;
+  --color-border-primary:       #a8a69e;
+  --border-radius-md:           8px;
+  --border-radius-lg:           12px;
+  --border-radius-xl:           16px;
+  --font-mono:                  'Fira Code', monospace;
+  --font-sans:                  system-ui, sans-serif;
+}

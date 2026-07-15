@@ -1,0 +1,56 @@
+# Free-tier Render Blueprint
+# - Frontend: deploy separately on Vercel
+# - Worker runs INSIDE the API (RUN_WORKER=true) — Render background workers are paid
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: codeexplainer-chroma
+    runtime: image
+    plan: free
+    image:
+      url: chromadb/chroma:latest
+    envVars:
+      - key: IS_PERSISTENT
+        value: "TRUE"
+      - key: ANONYMIZED_TELEMETRY
+        value: "FALSE"
+    healthCheckPath: /api/v2/heartbeat
+
+  - type: web
+    name: codeexplainer-api
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: RUN_WORKER
+        value: "true"
+      - key: LLM_PROVIDER
+        value: groq
+      - key: EMBED_PROVIDER
+        value: huggingface
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: HF_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: CHROMA_URL
+        fromService:
+          name: codeexplainer-chroma
+          type: web
+          property: hostport

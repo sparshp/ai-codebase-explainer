@@ -1,0 +1,26 @@
+{
+    "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": "./src",
+    "paths": {
+      "@config/*": ["config/*"],
+      "@modules/*": ["modules/*"],
+      "@services/*": ["services/*"],
+      "@workers/*": ["workers/*"],
+      "@queues/*": ["queues/*"],
+      "@middleware/*": ["middleware/*"],
+      "@db/*": ["db/*"],
+      "@utils/*": ["utils/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+
+}
