@@ -10,10 +10,35 @@ function requireEnv(key: string): string {
 const nodeEnv = process.env.NODE_ENV || 'development'
 const isProd  = nodeEnv === 'production'
 
-function normalizeUrl(url: string): string {
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return `https://${url}`
+function normalizeChromaUrl(raw: string): string {
+  let url = raw.trim().replace(/^["']|["']$/g, '')
+
+  if (!url.includes('://')) {
+    // Blueprint hostport e.g. "codeexplainer-chroma:8000" — free tier has no private net
+    const host = url.split(':')[0]
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      url = `https://${host}.onrender.com`
+    } else {
+      url = `http://${url}`
+    }
   }
+
+  return url.replace(/\/$/, '')
+}
+
+/** Accept plain rediss:// URLs or accidental redis-cli paste from Upstash. */
+function normalizeRedisUrl(raw: string): string {
+  let url = raw.trim().replace(/^["']|["']$/g, '')
+
+  // Strip: redis-cli --tls -u <url>
+  const cliMatch = url.match(/redis(?:s)?:\/\/\S+/)
+  if (cliMatch) url = cliMatch[0]
+
+  // Upstash requires TLS — upgrade redis:// → rediss://
+  if (url.startsWith('redis://') && /upstash\.io/i.test(url)) {
+    url = 'rediss://' + url.slice('redis://'.length)
+  }
+
   return url
 }
 
@@ -22,8 +47,8 @@ export const config = {
   nodeEnv,
   isProd,
   databaseUrl:       requireEnv('DATABASE_URL'),
-  redisUrl:          requireEnv('REDIS_URL'),
-  chromaUrl:         normalizeUrl(process.env.CHROMA_URL || 'http://localhost:8000'),
+  redisUrl:          normalizeRedisUrl(requireEnv('REDIS_URL')),
+  chromaUrl:         normalizeChromaUrl(process.env.CHROMA_URL || 'http://localhost:8000'),
   frontendUrl:       process.env.FRONTEND_URL || 'http://localhost:5173',
 
   // Embeddings — ollama (local) or huggingface (cloud)
