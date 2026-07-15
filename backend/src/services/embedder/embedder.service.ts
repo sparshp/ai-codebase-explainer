@@ -13,15 +13,29 @@ function toVector(raw: unknown): number[] {
     return l2Normalize(raw as number[])
   }
   if (Array.isArray(raw) && Array.isArray(raw[0])) {
-    const tokens = raw as number[][]
-    const dim    = tokens[0].length
-    const mean   = new Array(dim).fill(0)
-    for (const tok of tokens) {
-      for (let i = 0; i < dim; i++) mean[i] += tok[i]
+    // Token-level matrix → mean pool, or already [[embedding]]
+    const first = raw[0] as unknown
+    if (Array.isArray(first) && typeof (first as number[])[0] === 'number') {
+      const tokens = raw as number[][]
+      // single embedding row: [[dim0, dim1, ...]]
+      if (tokens.length === 1) return l2Normalize(tokens[0])
+      const dim  = tokens[0].length
+      const mean = new Array(dim).fill(0)
+      for (const tok of tokens) {
+        for (let i = 0; i < dim; i++) mean[i] += tok[i]
+      }
+      return l2Normalize(mean.map(v => v / tokens.length))
     }
-    return l2Normalize(mean.map(v => v / tokens.length))
   }
   throw new Error('Unexpected embedding shape from provider')
+}
+
+function formatHfError(err: any): string {
+  const data = err?.response?.data
+  if (typeof data === 'string') return data.slice(0, 400)
+  if (data?.error) return typeof data.error === 'string' ? data.error : JSON.stringify(data.error)
+  if (data?.message) return data.message
+  return err?.message || 'unknown error'
 }
 
 async function embedWithOllama(texts: string[]): Promise<number[][]> {
@@ -59,31 +73,67 @@ async function embedWithHuggingFace(texts: string[]): Promise<number[][]> {
     throw new Error('HF_API_KEY is required when EMBED_PROVIDER=huggingface')
   }
 
-  const url = `https://router.huggingface.co/hf-inference/models/${config.hfEmbedModel}`
-  const vectors: number[][] = []
+  // Explicit feature-extraction pipeline — required by Inference Providers
+  const url =
+    `https://router.huggingface.co/hf-inference/models/${config.hfEmbedModel}` +
+    '/pipeline/feature-extraction'
 
-  for (const text of texts) {
+  const vectors: number[][] = []
+  const BATCH = 8
+
+  for (let i = 0; i < texts.length; i += BATCH) {
+    const batch = texts.slice(i, i + BATCH).map(t => t.slice(0, 8000))
     let attempts = 0
+
     while (attempts < 3) {
       try {
         const res = await axios.post(
           url,
-          { inputs: text },
+          {
+            inputs: batch.length === 1 ? batch[0] : batch,
+            truncate: true,
+            normalize: true,
+          },
           {
             headers: {
               Authorization: `Bearer ${config.hfApiKey}`,
               'Content-Type': 'application/json',
             },
-            timeout: 60000,
+            timeout: 120000,
           }
         )
-        vectors.push(toVector(res.data))
+
+        const data = res.data
+        if (batch.length === 1) {
+          vectors.push(toVector(data))
+        } else if (Array.isArray(data)) {
+          for (const item of data) vectors.push(toVector(item))
+        } else {
+          throw new Error('Unexpected batch embedding response from Hugging Face')
+        }
         break
       } catch (err: any) {
         attempts++
         const status = err?.response?.status
-        logger.warn({ attempt: attempts, status, error: err?.message }, 'HF embed retry')
-        if (attempts >= 3) throw err
+        const detail = formatHfError(err)
+        logger.warn({ attempt: attempts, status, error: detail, model: config.hfEmbedModel }, 'HF embed retry')
+
+        if (attempts >= 3) {
+          if (status === 401 || status === 403) {
+            throw new Error(
+              `Hugging Face rejected the API key (${status}): ${detail}. ` +
+              'Create a new token with Inference Providers access and set HF_API_KEY on Render.'
+            )
+          }
+          if (status === 400) {
+            throw new Error(
+              `Hugging Face bad request (400) for model "${config.hfEmbedModel}": ${detail}. ` +
+              'Set HF_EMBED_MODEL to a serverless-supported embedding model ' +
+              '(e.g. sentence-transformers/all-mpnet-base-v2) and keep EMBED_DIM=768.'
+            )
+          }
+          throw new Error(`Hugging Face embed failed (${status ?? 'network'}): ${detail}`)
+        }
         await sleep(status === 503 ? 3000 * attempts : 1000 * attempts)
       }
     }

@@ -56,7 +56,8 @@ export const config = {
   ollamaUrl:         process.env.OLLAMA_URL || 'http://localhost:11434',
   ollamaEmbedModel:  process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
   hfApiKey:          process.env.HF_API_KEY || '',
-  hfEmbedModel:      process.env.HF_EMBED_MODEL || 'nomic-ai/nomic-embed-text-v1.5',
+  // Nomic often returns 400 on HF serverless — use a widely supported 768-d model
+  hfEmbedModel:      process.env.HF_EMBED_MODEL || 'sentence-transformers/all-mpnet-base-v2',
   embedDim:          parseInt(process.env.EMBED_DIM || '768'),
 
   ollamaLlmModel:    process.env.OLLAMA_LLM_MODEL || 'llama3.2',
