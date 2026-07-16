@@ -68,7 +68,11 @@ export function RepoInput({ onReady }: Props) {
         <p className="text-sm text-green-600">✓ Repository indexed and ready</p>
       )}
 
-      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+      {error && (
+        <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
     </div>
   )
 }

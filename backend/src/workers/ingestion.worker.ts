@@ -11,6 +11,7 @@ import { upsertChunks, deleteCollection } from '@services/vectorstore/chroma.cli
 import { IngestionJobData } from '@queues/ingestion.queue'
 import { logger } from '@utils/logger'
 import { RawFile } from '@services/github/github.filter'
+import { sanitizeTextForDb } from '@utils/text'
 
 async function updateJobProgress(jobId: string, progress: number, status: string) {
   await pool.query(
@@ -156,13 +157,13 @@ async function processIngestion(job: Job<IngestionJobData>) {
       values.push(
         String(c.id),
         String(c.repoId),
-        String(c.text),
-        String(c.filePath),
+        sanitizeTextForDb(String(c.text)),
+        sanitizeTextForDb(String(c.filePath)),
         Number(c.startLine),
         Number(c.endLine),
-        c.symbolName ? String(c.symbolName) : null,
-        c.symbolType ? String(c.symbolType) : null,
-        c.language   ? String(c.language)   : null,
+        c.symbolName ? sanitizeTextForDb(String(c.symbolName)) : null,
+        c.symbolType ? sanitizeTextForDb(String(c.symbolType)) : null,
+        c.language   ? sanitizeTextForDb(String(c.language))   : null,
         String((c as any).fileSha || '')
       )
       return `($${b+1},$${b+2}::uuid,$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10})`

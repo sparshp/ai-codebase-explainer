@@ -329,7 +329,11 @@ function AddRepoInline({
           ↩ Already indexed — opening your previous session
         </p>
       )}
-      {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
+      {error && (
+        <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {status === 'ingesting' && !isExisting && (
         <div className="mt-2">

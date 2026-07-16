@@ -4,6 +4,7 @@ import { filterFiles, RawFile } from './github.filter'
 import { logger } from '@utils/logger'
 import { sleep } from '@utils/sleep'
 import { AppError } from '@utils/errors'
+import { decodeGitHubBlobContent } from '@utils/text'
 
 interface GitHubTreeItem {
   path:  string
@@ -78,7 +79,8 @@ export async function fetchRepoFiles(
         const rawContent: string | null = blobRes.data?.content ?? null
         if (rawContent === null) return null   // binary/empty blob — skip
 
-        const content = Buffer.from(rawContent.replace(/\n/g, ''), 'base64').toString('utf8')
+        const content = decodeGitHubBlobContent(rawContent)
+        if (content === null) return null
         return {
           path:    item.path,
           content,
@@ -189,14 +191,13 @@ export async function fetchChangedFiles(
           const item = currentTree.find(f => f.path === path)!
           const blobUrl = `https://api.github.com/repos/${owner}/${repo}/git/blobs/${item.sha}`
           const blobRes = await axios.get(blobUrl, { headers })
-          const content = Buffer.from(
-            blobRes.data.content.replace(/\n/g, ''), 'base64'
-          ).toString('utf8')
+          const content = decodeGitHubBlobContent(blobRes.data.content)
+          if (content === null) return null
           return { path, content, sha: item.sha, size: item.size || 0 } as RawFile
         })
       )
       for (const r of results) {
-        if (r.status === 'fulfilled') rawFiles.push(r.value)
+        if (r.status === 'fulfilled' && r.value !== null) rawFiles.push(r.value)
       }
       if (i + BATCH < pathsToDownload.length) await sleep(200)
     }

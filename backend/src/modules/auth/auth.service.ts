@@ -3,9 +3,12 @@ import jwt from 'jsonwebtoken'
 import { pool } from '@config/database'
 import { config } from '@config/index'
 import { AppError, UnauthorizedError } from '@utils/errors'
-import { AuthTokens, JWTPayload } from './auth.types'
+import { AuthResult, JWTPayload } from './auth.types'
 
-function generateTokens(userId: string, email: string): AuthTokens {
+// Cost 8 is ~4x faster than 10 and still fine for this app on free-tier CPU
+const BCRYPT_ROUNDS = 8
+
+function generateTokens(userId: string, email: string) {
   const payload: JWTPayload = { userId, email }
 
   const accessToken = jwt.sign(payload, config.jwtSecret, {
@@ -22,8 +25,7 @@ function generateTokens(userId: string, email: string): AuthTokens {
 export async function register(
   email: string,
   password: string
-): Promise<AuthTokens> {
-  // Check if email already exists
+): Promise<AuthResult> {
   const existing = await pool.query(
     'SELECT id FROM users WHERE email = $1',
     [email.toLowerCase()]
@@ -32,27 +34,28 @@ export async function register(
     throw new AppError('Email already registered', 409, 'EMAIL_EXISTS')
   }
 
-  // Hash password
-  const passwordHash = await bcrypt.hash(password, 10)
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)
 
-  // Insert user
   const res = await pool.query(
     `INSERT INTO users (email, password_hash)
      VALUES ($1, $2)
-     RETURNING id, email`,
+     RETURNING id, email, created_at`,
     [email.toLowerCase(), passwordHash]
   )
 
   const user = res.rows[0]
-  return generateTokens(user.id, user.email)
+  return {
+    ...generateTokens(user.id, user.email),
+    user: { id: user.id, email: user.email, created_at: user.created_at },
+  }
 }
 
 export async function login(
   email: string,
   password: string
-): Promise<AuthTokens> {
+): Promise<AuthResult> {
   const res = await pool.query(
-    'SELECT id, email, password_hash FROM users WHERE email = $1',
+    'SELECT id, email, password_hash, created_at FROM users WHERE email = $1',
     [email.toLowerCase()]
   )
 
@@ -67,10 +70,13 @@ export async function login(
     throw new UnauthorizedError('Invalid email or password')
   }
 
-  return generateTokens(user.id, user.email)
+  return {
+    ...generateTokens(user.id, user.email),
+    user: { id: user.id, email: user.email, created_at: user.created_at },
+  }
 }
 
-export async function refreshTokens(token: string): Promise<AuthTokens> {
+export async function refreshTokens(token: string) {
   try {
     const payload = jwt.verify(token, config.jwtSecret) as JWTPayload
     return generateTokens(payload.userId, payload.email)

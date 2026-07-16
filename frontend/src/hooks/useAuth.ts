@@ -6,17 +6,15 @@ export function useAuth() {
   const { setAuth, setUser, clearAuth, isAuthenticated, user } = useAuthStore()
 
   const login = useCallback(async (email: string, password: string) => {
-    const tokens = await authApi.login(email, password)
-    setAuth(tokens.accessToken, tokens.refreshToken)
-    const me = await authApi.me()
-    setUser(me)
+    const res = await authApi.login(email, password)
+    setAuth(res.accessToken, res.refreshToken)
+    setUser(res.user)
   }, [setAuth, setUser])
 
   const register = useCallback(async (email: string, password: string) => {
-    const tokens = await authApi.register(email, password)
-    setAuth(tokens.accessToken, tokens.refreshToken)
-    const me = await authApi.me()
-    setUser(me)
+    const res = await authApi.register(email, password)
+    setAuth(res.accessToken, res.refreshToken)
+    setUser(res.user)
   }, [setAuth, setUser])
 
   const logout = useCallback(() => {

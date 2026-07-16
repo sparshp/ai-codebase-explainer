@@ -1,12 +1,18 @@
 import { pool } from '@config/database'
 import { addIngestionJob } from '@queues/ingestion.queue'
-import { NotFoundError, AppError } from '@utils/errors'
+import { NotFoundError } from '@utils/errors'
+import { assertPublicGitHubRepo, parseGitHubRepoUrl } from '@services/github/github.validate'
 
 export async function createRepo(
   url:    string,
   branch: string,
   userId: string        // ← now required
 ) {
+  // Normalize + validate before any DB writes
+  const { owner, repo } = parseGitHubRepoUrl(url)
+  const normalizedUrl = `https://github.com/${owner}/${repo}`
+  await assertPublicGitHubRepo(normalizedUrl, branch)
+
   // ── Deduplication check ──────────────────────────────────────
   // If this user already indexed this exact URL+branch and it's ready,
   // return the existing repo instead of creating a new one
@@ -22,17 +28,17 @@ export async function createRepo(
        AND r.status  = 'ready'
      ORDER BY r.created_at DESC
      LIMIT 1`,
-    [userId, url, branch]
+    [userId, normalizedUrl, branch]
   )
 
   if (existing.rows.length > 0) {
-    const repo = existing.rows[0]
+    const row = existing.rows[0]
     return {
-      repoId:    repo.id,
-      jobId:     repo.job_id,
+      repoId:    row.id,
+      jobId:     row.job_id,
       isExisting: true,     // ← tells controller to return 200 not 202
       status:    'ready',
-      name:      repo.name,
+      name:      row.name,
     }
   }
 
@@ -41,37 +47,33 @@ export async function createRepo(
     `INSERT INTO repos (url, name, branch, status, user_id)
      VALUES ($1, $2, $3, 'queued', $4::uuid)
      RETURNING id, name`,
-    [url, repoNameFromUrl(url), branch, userId]
+    [normalizedUrl, `${owner}/${repo}`, branch, userId]
   )
-  const repo = repoRes.rows[0]
+  const created = repoRes.rows[0]
 
   const jobRes = await pool.query(
     `INSERT INTO ingestion_jobs (repo_id, status)
      VALUES ($1::uuid, 'queued')
      RETURNING id`,
-    [repo.id]
+    [created.id]
   )
   const jobId = jobRes.rows[0].id
 
   await addIngestionJob({
-    repoId:      repo.id,
+    repoId:      created.id,
     jobId,
-    repoUrl:     url,
+    repoUrl:     normalizedUrl,
     branch,
     incremental: false,
   })
 
   return {
-    repoId:     repo.id,
+    repoId:     created.id,
     jobId,
     isExisting: false,
     status:     'queued',
-    name:       repo.name,
+    name:       created.name,
   }
-}
-
-function repoNameFromUrl(url: string): string {
-  return url.split('/').slice(-2).join('/')
 }
 
 // ── Get all repos for a user with stats ──────────────────────────
