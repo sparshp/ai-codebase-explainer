@@ -22,6 +22,13 @@ export function classifyIntent(question: string): QueryIntent {
     return 'DEBUG'
   }
 
+  // UML / diagram requests → architecture (class/component) or flow (sequence)
+  const wantsDiagram = /uml|class\s*diagram|component\s*diagram|sequence\s*diagram|activity\s*diagram|mermaid|draw\s+(a\s+)?(diagram|uml)|show\s+(a\s+)?(diagram|uml)/.test(q)
+  if (wantsDiagram) {
+    if (/sequence|activity|step|flow|trace|walk\s*through/.test(q)) return 'FLOW'
+    return 'ARCHITECTURE'
+  }
+
   const wantsExplanation = /explain|how does|how do|walk me through|describe how/.test(q)
   const wantsFlow = /trace|end to end|execution|step by step|what happens when|flow through|works in this/.test(q)
 

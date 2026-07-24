@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Light as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomOneLight } from 'react-syntax-highlighter/dist/esm/styles/hljs'
 import { useUIStore } from '../../store/ui.store'
+import { MermaidDiagram } from './MermaidDiagram'
 
 type CitationMap = Record<string, {
   filePath:  string
@@ -238,7 +239,7 @@ function parseAndRender(text: string, citations: CitationMap) {
 
     if (trimmed.startsWith('```')) {
       flushImprovement()
-      const lang = trimmed.slice(3).trim() || 'typescript'
+      const lang = trimmed.slice(3).trim().toLowerCase() || 'typescript'
       const codeLines: string[] = []
       i++
       while (i < lines.length && !lines[i].trim().startsWith('```')) {
@@ -246,18 +247,24 @@ function parseAndRender(text: string, citations: CitationMap) {
         i++
       }
       i++
-      nodes.push(
-        <div key={`code-${blockKey++}`} style={{ margin: '10px 0', borderRadius: '10px', overflow: 'hidden', border: '1px solid #E5E7EB' }}>
-          <SyntaxHighlighter
-            language={lang}
-            style={atomOneLight}
-            customStyle={{ margin: 0, padding: '14px', fontSize: '12px', lineHeight: 1.5 }}
-            wrapLongLines
-          >
-            {codeLines.join('\n')}
-          </SyntaxHighlighter>
-        </div>
-      )
+      const code = codeLines.join('\n')
+
+      if (lang === 'mermaid' || lang.startsWith('mermaid')) {
+        nodes.push(<MermaidDiagram key={`uml-${blockKey++}`} code={code} />)
+      } else {
+        nodes.push(
+          <div key={`code-${blockKey++}`} style={{ margin: '10px 0', borderRadius: '10px', overflow: 'hidden', border: '1px solid #E5E7EB' }}>
+            <SyntaxHighlighter
+              language={lang}
+              style={atomOneLight}
+              customStyle={{ margin: 0, padding: '14px', fontSize: '12px', lineHeight: 1.5 }}
+              wrapLongLines
+            >
+              {code}
+            </SyntaxHighlighter>
+          </div>
+        )
+      }
       continue
     }
 

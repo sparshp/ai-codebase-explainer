@@ -13,6 +13,7 @@ Paste a repo URL → we index it (parse → chunk → embed) → you chat in Loo
 | **GitHub indexing** | Public repos only; async BullMQ job with live progress |
 | **Hybrid RAG** | Dense vectors (Chroma) + keyword search (Postgres BM25/ILIKE) fused with RRF |
 | **Intent modes** | Lookup · Architecture · Flow · Debug — different prompts & retrieval behaviour |
+| **UML diagrams** | Architecture/Flow answers can include Mermaid class, component, or sequence diagrams |
 | **Streaming chat** | Server-Sent Events (SSE) with citation badges |
 | **Dashboard** | Repo list, stats, health checks, re-index, delete, history |
 | **Auth** | Email/password + JWT access & refresh tokens |
