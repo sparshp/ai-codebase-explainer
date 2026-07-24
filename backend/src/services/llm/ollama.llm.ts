@@ -6,16 +6,22 @@ import { LOOKUP_PROMPT } from './prompts/system.lookup'
 import { ARCHITECTURE_PROMPT } from './prompts/system.architecture'
 import { DEBUG_PROMPT } from './prompts/system.debug'
 import { FLOW_PROMPT } from './prompts/system.flow'
+import { withSecurityRules } from './prompts/security'
 import { maxTokensForIntent } from './token-limits'
+import {
+  buildDelimitedUserMessage,
+  sanitizeHistoryContent,
+  validateLlmOutput,
+} from './prompt-guard'
 
 export { QueryIntent }
 
 export function getSystemPrompt(intent: QueryIntent): string {
   switch (intent) {
-    case 'LOOKUP':       return LOOKUP_PROMPT
-    case 'DEBUG':        return DEBUG_PROMPT
-    case 'FLOW':         return FLOW_PROMPT
-    case 'ARCHITECTURE': return ARCHITECTURE_PROMPT
+    case 'LOOKUP':       return withSecurityRules(LOOKUP_PROMPT)
+    case 'DEBUG':        return withSecurityRules(DEBUG_PROMPT)
+    case 'FLOW':         return withSecurityRules(FLOW_PROMPT)
+    case 'ARCHITECTURE': return withSecurityRules(ARCHITECTURE_PROMPT)
   }
 }
 
@@ -26,7 +32,7 @@ export async function generateAnswer(
   intent:   QueryIntent
 ): Promise<string> {
   const systemPrompt = getSystemPrompt(intent)
-  const userMessage  = `CONTEXT:\n${context}\n\nQUESTION: ${question}`
+  const userMessage  = buildDelimitedUserMessage(question, context)
 
   logger.debug({ intent, contextLength: context.length }, 'Calling Ollama LLM')
 
@@ -41,7 +47,7 @@ export async function generateAnswer(
     keep_alive: '30m',
   })
 
-  return res.data.message?.content || ''
+  return validateLlmOutput(res.data.message?.content || '')
 }
 
 // ── Streaming: yields tokens one by one for SSE ──────────────────
@@ -52,12 +58,15 @@ export async function* generateStream(
   history:  Array<{ role: string; content: string }> = []
 ): AsyncGenerator<string> {
   const systemPrompt = getSystemPrompt(intent)
-  const userMessage  = `CONTEXT:\n${context}\n\nQUESTION: ${question}`
+  const userMessage  = buildDelimitedUserMessage(question, context)
 
   const messages = [
-    { role: 'system',    content: systemPrompt },
-    ...history.slice(-4),                          // last 2 turns max
-    { role: 'user',      content: userMessage  },
+    { role: 'system', content: systemPrompt },
+    ...history.slice(-4).map(h => ({
+      role:    h.role,
+      content: sanitizeHistoryContent(h.content),
+    })),
+    { role: 'user', content: userMessage },
   ]
 
   logger.debug({ intent }, 'Starting Ollama stream')

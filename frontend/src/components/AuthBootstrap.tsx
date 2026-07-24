@@ -53,8 +53,11 @@ export function AuthBootstrap({ children }: { children: React.ReactNode }) {
         justifyContent: 'center',
         background: 'var(--color-background-tertiary)',
       }}>
-        <div style={{ fontSize: '13px', color: 'var(--color-text-tertiary)' }}>
-          Loading...
+        <div style={{ fontSize: '14px', color: 'var(--color-text-tertiary)', textAlign: 'center', maxWidth: 320, lineHeight: 1.5, padding: '0 16px' }}>
+          <div style={{ marginBottom: 8 }}>Loading your session…</div>
+          <div style={{ fontSize: '13px', opacity: 0.85 }}>
+            The first request can take up to a minute on Render’s free plan while the server wakes up. Later loads are much faster.
+          </div>
         </div>
       </div>
     )

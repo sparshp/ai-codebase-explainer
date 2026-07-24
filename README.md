@@ -260,6 +260,23 @@ Step-by-step checklist (secrets, migrations, CORS, env): **[DEPLOY.md](./DEPLOY.
 4. **Worker in API (prod)** — avoids a paid Render background worker on free tier.
 5. **Fail-fast repo validation** — reject non-GitHub / private repos before enqueueing a job.
 6. **Null-byte sanitization** — strip binary/NUL content so Postgres UTF-8 inserts never blow up mid-index.
+7. **Prompt-injection guard** — detect jailbreak patterns, delimit untrusted question/context with markers, harden system prompts, validate LLM output.
+
+---
+
+## Security — prompt injection
+
+User messages and retrieved code can try to override the system prompt (“Ignore all previous instructions…”). Defenses in `backend/src/services/llm/prompt-guard.ts`:
+
+| Layer | What it does |
+|-------|----------------|
+| **Input scan** | High-confidence patterns (`ignore previous instructions`, `you are now DAN`, fake `<system>` tags) → **400 ValidationError** |
+| **Boundary markers** | Question/context wrapped in `<\|USER_QUESTION\|>` / `<\|CODE_CONTEXT\|>` — system prompt tells the model these are data, not commands |
+| **System prompt rules** | Every intent prompt includes non-negotiable anti-override / no-prompt-leak rules |
+| **History sanitize** | Strip forged delimiter / system tags from past turns |
+| **Output validate** | Jailbreak-style answers replaced or blocked before persist |
+
+This is defense-in-depth, not a guarantee — models can still be socially engineered. Keep temperature low and never put secrets in the system prompt.
 
 ---
 
@@ -270,6 +287,7 @@ Step-by-step checklist (secrets, migrations, CORS, env): **[DEPLOY.md](./DEPLOY.
 - Chat API is not yet ownership-scoped (knowing a `repoId` is enough)
 - Free-tier cold starts and rate limits (GitHub, Groq, HF)
 - Reranking is off by default (`ENABLE_RERANK=false`) for latency
+- Prompt-injection defenses reduce risk but cannot fully eliminate jailbreaks on open models
 
 ---
 

@@ -10,6 +10,7 @@ import { pool } from '@config/database'
 import { logger } from '@utils/logger'
 import { randomUUID } from 'crypto'
 import { RankedResult } from '@services/retriever/rrf'
+import { sanitizeUserQuestion, validateLlmOutput } from '@services/llm/prompt-guard'
 
 const STREAM_CHUNK_SIZE = 48
 
@@ -117,16 +118,17 @@ export async function queryRepo(
   latencyMs:      number
 }> {
   const start = Date.now()
+  const safeQuestion = sanitizeUserQuestion(question)
 
-  const cached = !intentHint ? await getCached(question, repoId) : null
+  const cached = !intentHint ? await getCached(safeQuestion, repoId) : null
   if (cached) {
-    logger.info({ question }, 'Cache hit')
+    logger.info({ question: safeQuestion }, 'Cache hit')
     return { ...cached, conversationId, latencyMs: Date.now() - start }
   }
 
   const history  = conversationId ? await getHistory(conversationId, repoId) : []
-  const analysed = await analyseQuery(question, history, intentHint)
-  logger.info({ question, repoId, intent: analysed.intent }, 'Query received')
+  const analysed = await analyseQuery(safeQuestion, history, intentHint)
+  logger.info({ question: safeQuestion, repoId, intent: analysed.intent }, 'Query received')
 
   let ranked = await retrieveWithExpansion(
     analysed.resolvedQuery,
@@ -151,7 +153,7 @@ export async function queryRepo(
   const citations = mapCitations(answer, usedChunks)
   const latencyMs = Date.now() - start
 
-  persistConversation(repoId, conversationId, question, answer, citations, latencyMs)
+  persistConversation(repoId, conversationId, safeQuestion, answer, citations, latencyMs)
   logger.info({ latencyMs, intent: analysed.intent }, 'Query complete')
   return { answer, citations, conversationId, latencyMs }
 }
@@ -168,19 +170,20 @@ export async function* queryRepoStream(
   | { type: 'error';     message: string }
 > {
   const start = Date.now()
+  const safeQuestion = sanitizeUserQuestion(question)
 
   // Intent override (e.g. Debug mode) must skip generic cache to avoid wrong prompt style
-  const cached = !intentHint ? await getCached(question, repoId) : null
+  const cached = !intentHint ? await getCached(safeQuestion, repoId) : null
   if (cached) {
-    logger.info({ question }, 'Cache hit — streaming cached response')
+    logger.info({ question: safeQuestion }, 'Cache hit — streaming cached response')
     yield* streamText(cached.answer)
     yield { type: 'citations', citations: cached.citations, conversationId, latencyMs: Date.now() - start }
     return
   }
 
   const history  = await getHistory(conversationId, repoId)
-  const analysed = await analyseQuery(question, history, intentHint)
-  logger.info({ question, repoId, intent: analysed.intent }, 'Stream query received')
+  const analysed = await analyseQuery(safeQuestion, history, intentHint)
+  logger.info({ question: safeQuestion, repoId, intent: analysed.intent }, 'Stream query received')
 
   let ranked = await retrieveWithExpansion(
     analysed.resolvedQuery,
@@ -221,9 +224,18 @@ export async function* queryRepoStream(
     return
   }
 
-  const citations = mapCitations(fullResponse, usedChunks)
+  const safeAnswer = validateLlmOutput(fullResponse)
+  if (safeAnswer !== fullResponse) {
+    yield {
+      type: 'error',
+      message: 'Response blocked: the model attempted to leave its codebase-assistant role.',
+    }
+    return
+  }
+
+  const citations = mapCitations(safeAnswer, usedChunks)
   const latencyMs = Date.now() - start
 
   yield { type: 'citations', citations, conversationId, latencyMs }
-  persistConversation(repoId, conversationId, question, fullResponse, citations, latencyMs)
+  persistConversation(repoId, conversationId, safeQuestion, safeAnswer, citations, latencyMs)
 }

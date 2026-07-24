@@ -3,6 +3,11 @@ import { config } from '@config/index'
 import { logger } from '@utils/logger'
 import { QueryIntent, getSystemPrompt } from './ollama.llm'
 import { maxTokensForIntent } from './token-limits'
+import {
+  buildDelimitedUserMessage,
+  sanitizeHistoryContent,
+  validateLlmOutput,
+} from './prompt-guard'
 
 const groq = new Groq({ apiKey: config.groqApiKey })
 
@@ -12,7 +17,7 @@ export async function generateAnswerGroq(
   intent:   QueryIntent
 ): Promise<string> {
   const systemPrompt = getSystemPrompt(intent)
-  const userMessage  = `CONTEXT:\n${context}\n\nQUESTION: ${question}`
+  const userMessage  = buildDelimitedUserMessage(question, context)
 
   logger.debug({ intent }, 'Calling Groq LLM')
 
@@ -26,7 +31,7 @@ export async function generateAnswerGroq(
     ],
   })
 
-  return res.choices[0]?.message?.content || ''
+  return validateLlmOutput(res.choices[0]?.message?.content || '')
 }
 
 export async function* generateStreamGroq(
@@ -36,13 +41,13 @@ export async function* generateStreamGroq(
   history:  Array<{ role: string; content: string }> = []
 ): AsyncGenerator<string> {
   const systemPrompt = getSystemPrompt(intent)
-  const userMessage  = `CONTEXT:\n${context}\n\nQUESTION: ${question}`
+  const userMessage  = buildDelimitedUserMessage(question, context)
 
   const messages = [
-    { role: 'system' as const,    content: systemPrompt },
+    { role: 'system' as const, content: systemPrompt },
     ...history.slice(-4).map(h => ({
       role:    h.role as 'user' | 'assistant',
-      content: h.content,
+      content: sanitizeHistoryContent(h.content),
     })),
     { role: 'user' as const, content: userMessage },
   ]
