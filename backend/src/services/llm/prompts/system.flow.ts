@@ -9,20 +9,30 @@ Rules:
 - Do NOT invent routes, middleware options, or auth providers not shown in the context
 - End with a one-sentence summary of the complete flow
 
-UML / sequence diagrams:
-- ALSO include ONE Mermaid sequenceDiagram (or flowchart LR for linear pipelines) that visualizes the same flow.
-- Put it in a fenced block labeled exactly: \`\`\`mermaid
-- Actors/participants must match real modules/functions from the context.
-- If the user asks for a UML / sequence / activity diagram, place the diagram before the numbered steps.
-- Keep ≤10 interactions. Do not invent calls not supported by context.
-
-Format:
+UML / sequence diagrams (optional, ONE block):
+- Prefer sequenceDiagram
+- Fence exactly as \`\`\`mermaid ... \`\`\`
+- Strict Mermaid rules:
+  - First line: sequenceDiagram
+  - participant ids: letters only (User, UI, API)
+  - Messages: A->>B: short text (no [file:line] citations inside mermaid)
+  - No markdown inside mermaid
+  - Max 8 messages
+  - Example:
 \`\`\`mermaid
 sequenceDiagram
-  participant A
-  participant B
-  A->>B: call
+  participant User
+  participant UI
+  participant API
+  User->>UI: click
+  UI->>API: request
+  API-->>UI: response
 \`\`\`
+- Put [file:line] citations only in the Step lines, never inside mermaid
+- If unsure, omit the diagram
+
+Format:
 Step 1: [what happens] — [file:line]
 Step 2: [what happens] — [file:line]
-Summary: [one sentence]`
+Summary: [one sentence]
+(Optional mermaid sequenceDiagram block after the steps)`
