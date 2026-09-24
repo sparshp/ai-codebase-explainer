@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import mermaid from 'mermaid'
 
 let mermaidReady = false
@@ -9,7 +9,6 @@ function ensureMermaid() {
     startOnLoad: false,
     securityLevel: 'strict',
     theme: 'neutral',
-    // Don't inject Mermaid's bomb/"Syntax error in text" SVG into the DOM
     suppressErrorRendering: true,
     flowchart: { curve: 'basis', htmlLabels: false },
     sequence: { actorMargin: 40, messageMargin: 30 },
@@ -17,76 +16,75 @@ function ensureMermaid() {
   mermaidReady = true
 }
 
-/** Fix common LLM Mermaid mistakes that break Mermaid 11. */
+/**
+ * Fix common LLM Mermaid mistakes that break Mermaid 11.
+ * Historical answers in the DB often have unquoted labels with spaces/parens/→ —
+ * this must repair them at render time so old chats still draw.
+ */
 export function sanitizeMermaidCode(raw: string): string {
   let code = raw.trim()
 
-  // Drop accidental fence markers inside the block
   code = code.replace(/^```(?:mermaid)?\s*/i, '').replace(/```$/g, '').trim()
 
-  // Citations like [CartPanel.tsx:29] inside labels break parsers — strip them
+  // Citations like [CartPanel.tsx:29] inside labels break parsers
   code = code.replace(/\[[^\]]+\.\w+:\d+(?:-\d+)?\]/g, '')
 
-  // Markdown bold/italics inside diagrams
   code = code.replace(/\*\*/g, '').replace(/__/g, '')
 
-  // Smart quotes → ASCII
-  code = code.replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
-
-  // Unicode arrows / dashes inside labels confuse the edge lexer — normalize
+  // Smart quotes / fullwidth brackets → ASCII
   code = code
-    .replace(/[→⇒➔➜➝➞]/g, '->')
-    .replace(/[←⇐]/g, '<-')
-    .replace(/[—–]/g, '-')
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\uFF3B/g, '[')
+    .replace(/\uFF3D/g, ']')
 
-  // Prefer flowchart over deprecated graph keyword
+  // Unicode arrows/dashes → ASCII (LLM loves → inside labels)
+  code = code
+    .replace(/[\u2192\u21D2\u2794\u279C\u279D\u279E]/g, '->')
+    .replace(/[\u2190\u21D0]/g, '<-')
+    .replace(/[\u2014\u2013]/g, '-')
+
   code = code.replace(/^\s*graph\s+/im, 'flowchart ')
 
   if (!/^\s*(flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/im.test(code)) {
     code = `flowchart TB\n${code}`
   }
 
-  // Always quote square labels (spaces, parens, unicode all break Mermaid 11):
-  //   B[CartPannel (handleCreateOrder)] → B["CartPannel (handleCreateOrder)"]
-  // Skip already-quoted: A["..."]
+  // Flatten parenthetical asides inside unquoted square labels before quoting
+  //   B[CartPannel (handleCreateOrder)] → B[CartPannel handleCreateOrder]
   code = code.replace(
     /\b([A-Za-z][\w]*)\[([^\]"]+)\]/g,
     (_m, id: string, label: string) => {
-      const safe = label.replace(/"/g, "'").trim()
+      const safe = label
+        .replace(/"/g, "'")
+        .replace(/\([^)]*\)/g, (paren) => ` ${paren.slice(1, -1)} `)
+        .replace(/[()]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
       return `${id}["${safe}"]`
     }
   )
 
-  // Round / stadium shapes: A([label]) or A(label with spaces)
+  // Stadium shapes: A([label with spaces])
   code = code.replace(
     /\b([A-Za-z][\w]*)\(\[([^\]"]+)\]\)/g,
     (_m, id: string, label: string) => {
-      const safe = label.replace(/"/g, "'").trim()
+      const safe = label.replace(/"/g, "'").replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()
       return `${id}(["${safe}"])`
     }
   )
-  code = code.replace(
-    /\b([A-Za-z][\w]*)\(([^)"\n]+)\)/g,
-    (_m, id: string, label: string) => {
-      // Skip edge syntax leftovers / empty
-      if (!label.trim() || /^( -->|---|-\.->)/.test(label)) return _m
-      const safe = label.replace(/"/g, "'").trim()
-      return `${id}("${safe}")`
-    }
-  )
 
-  // Diamond decisions: A{Ready?} → A{"Ready?"}
+  // Diamonds: A{Ready?}
   code = code.replace(
     /\b([A-Za-z][\w]*)\{([^}"]+)\}/g,
     (_m, id: string, label: string) => {
-      const safe = label.replace(/"/g, "'").trim()
+      const safe = label.replace(/"/g, "'").replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()
       return `${id}{"${safe}"}`
     }
   )
 
-return code.trim()
+  return code.trim()
 }
-
 
 function looksLikeMermaidErrorSvg(svg: string): boolean {
   return /syntax error/i.test(svg) || /error-icon|mermaid-error/i.test(svg)
@@ -99,23 +97,22 @@ interface Props {
 /** Renders a Mermaid UML / sequence / class / flowchart diagram. */
 export function MermaidDiagram({ code }: Props) {
   const reactId = useId().replace(/:/g, '')
+  // Sync sanitize so source panel never shows raw broken LLM text
+  const chart = useMemo(() => sanitizeMermaidCode(code), [code])
+
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showSource, setShowSource] = useState(false)
-  const [safeCode, setSafeCode] = useState(code)
 
   useEffect(() => {
     let cancelled = false
-    const chart = sanitizeMermaidCode(code)
-    setSafeCode(chart)
     if (!chart) return
 
     async function render() {
       try {
         ensureMermaid()
-        // Validate first — throws on bad syntax instead of returning error SVG
-        await mermaid.parse(chart)
         const id = `mermaid-${reactId}-${Math.random().toString(36).slice(2, 8)}`
+        // Skip mermaid.parse — it can false-fail; render is the source of truth
         const { svg: rendered } = await mermaid.render(id, chart)
 
         if (cancelled) return
@@ -129,10 +126,10 @@ export function MermaidDiagram({ code }: Props) {
 
         setSvg(rendered)
         setError(null)
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!cancelled) {
           setSvg(null)
-          setError(err?.message || 'Could not render diagram')
+          setError(err instanceof Error ? err.message : 'Could not render diagram')
           setShowSource(true)
         }
       }
@@ -140,7 +137,7 @@ export function MermaidDiagram({ code }: Props) {
 
     render()
     return () => { cancelled = true }
-  }, [code, reactId])
+  }, [chart, reactId])
 
   return (
     <div style={{
@@ -202,7 +199,7 @@ export function MermaidDiagram({ code }: Props) {
           whiteSpace: 'pre-wrap',
           background: '#FFFFFF',
         }}>
-          {safeCode || code.trim()}
+          {chart}
         </pre>
       )}
     </div>
