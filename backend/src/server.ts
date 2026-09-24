@@ -1,7 +1,7 @@
 import { createApp } from './app'
 import { connectDB }    from '@config/database'
 import { connectRedis } from '@config/redis'
-import { connectChroma } from '@config/chroma'
+import { connectChroma, wakeChromaInBackground } from '@config/chroma'
 import { config }       from '@config/index'
 import { logger }       from '@utils/logger'
 
@@ -31,12 +31,14 @@ async function runMigrations() {
 }
 
 async function start() {
+  // Required for serving traffic — keep this fast so Render health checks pass
   await connectDB()
   await connectRedis()
-  await connectChroma()
   await runMigrations()
 
-  // Free-tier deploys: run BullMQ worker inside the web process (Render workers are paid)
+  // Chroma is optional at boot (free tier sleeps / rate-limits). Don't block listen().
+  await connectChroma()
+
   let worker: { close: () => Promise<void> } | null = null
   if (process.env.RUN_WORKER === 'true') {
     const { startIngestionWorker } = await import('@workers/ingestion.worker')
@@ -45,11 +47,13 @@ async function start() {
   }
 
   const app = createApp()
-  const server = app.listen(config.port, () => {
-    logger.info(`✅ API server running on http://localhost:${config.port}`)
+  // Bind 0.0.0.0 so Render port scan sees the open port
+  const server = app.listen(config.port, '0.0.0.0', () => {
+    logger.info(`✅ API server running on http://0.0.0.0:${config.port}`)
+    // Warm Chroma in background after we're healthy for Render
+    wakeChromaInBackground()
   })
 
-  // Graceful shutdown
   const shutdown = async (signal: string) => {
     logger.info(`${signal} received`)
     server.close()

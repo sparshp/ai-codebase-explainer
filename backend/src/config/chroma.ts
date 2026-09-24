@@ -15,13 +15,10 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Wake / probe Chroma on Render free tier.
- * - Sleeping service → 502 / cold start (wait longer)
- * - Too many wake probes → 429 + x-render-routing: hibernate-rate-limited (back off hard)
- * - no-deploy → permanent failure until redeployed
+ * Call this on first ingest/query — NOT during boot (blocks Render health checks).
  */
 export async function ensureChromaAwake(opts?: {
   attempts?: number
-  /** Cap total wait; default ~2 minutes for free-tier wake */
   maxWaitMs?: number
 }): Promise<boolean> {
   if (chromaReady) return true
@@ -37,7 +34,7 @@ export async function ensureChromaAwake(opts?: {
 
       try {
         const res = await axios.get(heartbeatUrl(), {
-          timeout: 25_000,
+          timeout: 15_000,
           validateStatus: () => true,
         })
 
@@ -60,13 +57,11 @@ export async function ensureChromaAwake(opts?: {
           return false
         }
 
-        // Rate-limited wake: wait much longer before next probe
         if (res.status === 429 || routing.includes('hibernate-rate-limited')) {
           await sleep(Math.min(20_000 * i, 60_000))
           continue
         }
 
-        // Cold start / 502: moderate backoff
         await sleep(Math.min(8_000 * i, 40_000))
       } catch (err: any) {
         const status = err?.response?.status
@@ -87,9 +82,7 @@ export async function ensureChromaAwake(opts?: {
     }
 
     console.warn(
-      '⚠️  ChromaDB unreachable — continuing without vectors. ' +
-      'Tip: open https://codeexplainer-chroma.onrender.com/api/v2/heartbeat in a browser, ' +
-      'wait ~60s for wake, then retry. Free tier rate-limits rapid wake probes.'
+      '⚠️  ChromaDB unreachable. Open the Chroma heartbeat URL once, wait ~60s, then retry.'
     )
     return false
   })()
@@ -101,18 +94,57 @@ export async function ensureChromaAwake(opts?: {
   }
 }
 
-/** Startup probe — soft fail so API still boots when Chroma is sleeping. */
+/**
+ * Boot-time: one quick probe, never block deploy.
+ * Full wake happens lazily via ensureChromaAwake() on first vector use.
+ */
 export async function connectChroma(): Promise<void> {
   chromaReady = false
-  const ok = await ensureChromaAwake({ attempts: 6, maxWaitMs: 90_000 })
-  if (!ok) {
-    console.warn(
-      '⚠️  ChromaDB unreachable at boot — API started anyway. ' +
-      'Ingest/chat will retry waking Chroma on first use.'
+  try {
+    const res = await axios.get(heartbeatUrl(), {
+      timeout: 3_000,
+      validateStatus: () => true,
+    })
+    if (res.status >= 200 && res.status < 300) {
+      chromaReady = true
+      console.log('✅ ChromaDB connected')
+      return
+    }
+    logger.warn(
+      { status: res.status, routing: res.headers?.['x-render-routing'] },
+      'Chroma not ready at boot — will wake on first use'
+    )
+  } catch (err: any) {
+    logger.warn(
+      { err: err?.message },
+      'Chroma not reachable at boot — will wake on first use'
     )
   }
 }
 
+/** Non-blocking background wake (fire-and-forget after listen). */
+export function wakeChromaInBackground(): void {
+  void ensureChromaAwake().catch(() => {})
+}
+
 export function markChromaDown(): void {
   chromaReady = false
+}
+
+/** Fast status for /health — never waits on cold start. */
+export async function chromaHeartbeatQuick(): Promise<'ok' | 'down'> {
+  if (chromaReady) return 'ok'
+  try {
+    const res = await axios.get(heartbeatUrl(), {
+      timeout: 2_000,
+      validateStatus: () => true,
+    })
+    if (res.status >= 200 && res.status < 300) {
+      chromaReady = true
+      return 'ok'
+    }
+    return 'down'
+  } catch {
+    return 'down'
+  }
 }

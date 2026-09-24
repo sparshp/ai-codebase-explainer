@@ -1,34 +1,35 @@
 import { Router } from 'express'
 import { pool } from '@config/database'
 import { redis } from '@config/redis'
-import axios from 'axios'
-import { config } from '@config/index'
+import { chromaHeartbeatQuick } from '@config/chroma'
 
 const router = Router()
 
+/**
+ * Liveness for Render: return 200 when API can take traffic (Postgres + Redis).
+ * Chroma is reported but does NOT fail the health check — free-tier Chroma
+ * sleep/429 must not block deploys.
+ */
 router.get('/', async (_req, res) => {
   const checks = await Promise.allSettled([
     pool.query('SELECT 1'),
     redis.ping(),
-    axios.get(`${config.chromaUrl}/api/v2/heartbeat`, {
-      timeout: 15_000,
-      validateStatus: s => s < 500,
-    }).then(r => {
-      if (r.status === 429) throw new Error('chroma rate limited')
-      if (r.status >= 400) throw new Error(`chroma ${r.status}`)
-      return r
-    }),
+    chromaHeartbeatQuick(),
   ])
 
-  const [pg, rd, ch] = checks.map(c => c.status === 'fulfilled' ? 'ok' : 'down')
-  const allOk = [pg, rd, ch].every(s => s === 'ok')
+  const pg = checks[0].status === 'fulfilled' ? 'ok' : 'down'
+  const rd = checks[1].status === 'fulfilled' ? 'ok' : 'down'
+  const ch =
+    checks[2].status === 'fulfilled' && checks[2].value === 'ok' ? 'ok' : 'down'
 
-  res.status(allOk ? 200 : 503).json({
-    status: allOk ? 'ok' : 'degraded',
+  const coreOk = pg === 'ok' && rd === 'ok'
+
+  res.status(coreOk ? 200 : 503).json({
+    status: coreOk ? (ch === 'ok' ? 'ok' : 'degraded') : 'down',
     services: { postgres: pg, redis: rd, chroma: ch },
     uptime: process.uptime(),
     hint: ch === 'down'
-      ? 'Chroma may be sleeping or wake-rate-limited on Render free tier. Open /api/v2/heartbeat once and wait ~60s.'
+      ? 'Chroma sleeping or wake-rate-limited. API is up; vectors wake on first ingest/chat.'
       : undefined,
   })
 })
