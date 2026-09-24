@@ -13,18 +13,18 @@ UML diagrams (ONE mermaid block when helpful):
 - Fence exactly as \`\`\`mermaid ... \`\`\`
 - Mermaid syntax rules (strict — invalid diagrams will not render):
   - First line MUST be: flowchart TB   OR   classDiagram
-  - Node ids: letters/numbers/underscore only (CartPanel, not Cart Panel)
-  - Labels with spaces or dots: use quotes → CartPanel["CartPanel.tsx"]
+  - Node ids: CamelCase letters/numbers/underscore only (CartPanel). Never use bare id o or x.
+  - ALWAYS quote EVERY node label: CartPanel["CartPanel.tsx"], Never B[CartPanel (fn)]
+  - Use ASCII only in labels: write "->" not →; no fancy dashes
   - NEVER put citation brackets like [file:line] inside the mermaid block
   - NEVER use markdown (**bold**, bullets) inside mermaid
-  - NEVER use parentheses in unquoted labels
-  - Max 10 nodes, simple A --> B edges
+  - Max 10 nodes, simple A --> B edges only
   - Example:
 \`\`\`mermaid
 flowchart TB
   Root["__root.tsx"] --> Index["index.tsx"]
-  Index --> Cart["CartPanel.tsx"]
-  Index --> Orders["OrdersPanel.tsx"]
+  Index --> Cart["CartPanel handleCreateOrder"]
+  Index --> Orders["OrdersPanel PREPARING"]
 \`\`\`
 - Put citations ONLY in the prose outside the mermaid fence
 - If unsure the diagram is valid, skip the diagram and explain in prose only

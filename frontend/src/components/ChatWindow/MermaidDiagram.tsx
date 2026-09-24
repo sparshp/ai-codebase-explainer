@@ -33,39 +33,60 @@ export function sanitizeMermaidCode(raw: string): string {
   // Smart quotes → ASCII
   code = code.replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
 
-  const lines = code.split('\n').map(line => {
-    let L = line
+  // Unicode arrows / dashes inside labels confuse the edge lexer — normalize
+  code = code
+    .replace(/[→⇒➔➜➝➞]/g, '->')
+    .replace(/[←⇐]/g, '<-')
+    .replace(/[—–]/g, '-')
 
-    // flowchart: A[Label with (parens)] → A["Label with (parens)"]
-    L = L.replace(
-      /^(\s*[A-Za-z][\w]*\s*)\[([^\]"]+)\](\s*)$/g,
-      (_m, id, label, rest) => {
-        const safe = String(label).replace(/"/g, "'")
-        return `${id}["${safe}"]${rest}`
-      }
-    )
+  // Prefer flowchart over deprecated graph keyword
+  code = code.replace(/^\s*graph\s+/im, 'flowchart ')
 
-    // classDiagram / flowchart edge labels with unquoted special chars
-    // Keep simple — only quote node display text we already handled
-
-    // sequenceDiagram: messages with bare colons already ok; strip trailing citations leftovers
-    L = L.replace(/\s{2,}/g, ' ')
-    return L
-  })
-
-  code = lines.join('\n')
-
-  // Ensure a known diagram type is present
-  if (!/^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/im.test(code)) {
-    // LLM sometimes forgot the header — assume flowchart
+  if (!/^\s*(flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/im.test(code)) {
     code = `flowchart TB\n${code}`
   }
 
-  // Prefer flowchart over deprecated graph keyword for Mermaid 11
-  code = code.replace(/^\s*graph\s+/im, 'flowchart ')
+  // Always quote square labels (spaces, parens, unicode all break Mermaid 11):
+  //   B[CartPannel (handleCreateOrder)] → B["CartPannel (handleCreateOrder)"]
+  // Skip already-quoted: A["..."]
+  code = code.replace(
+    /\b([A-Za-z][\w]*)\[([^\]"]+)\]/g,
+    (_m, id: string, label: string) => {
+      const safe = label.replace(/"/g, "'").trim()
+      return `${id}["${safe}"]`
+    }
+  )
 
-  return code.trim()
+  // Round / stadium shapes: A([label]) or A(label with spaces)
+  code = code.replace(
+    /\b([A-Za-z][\w]*)\(\[([^\]"]+)\]\)/g,
+    (_m, id: string, label: string) => {
+      const safe = label.replace(/"/g, "'").trim()
+      return `${id}(["${safe}"])`
+    }
+  )
+  code = code.replace(
+    /\b([A-Za-z][\w]*)\(([^)"\n]+)\)/g,
+    (_m, id: string, label: string) => {
+      // Skip edge syntax leftovers / empty
+      if (!label.trim() || /^( -->|---|-\.->)/.test(label)) return _m
+      const safe = label.replace(/"/g, "'").trim()
+      return `${id}("${safe}")`
+    }
+  )
+
+  // Diamond decisions: A{Ready?} → A{"Ready?"}
+  code = code.replace(
+    /\b([A-Za-z][\w]*)\{([^}"]+)\}/g,
+    (_m, id: string, label: string) => {
+      const safe = label.replace(/"/g, "'").trim()
+      return `${id}{"${safe}"}`
+    }
+  )
+
+return code.trim()
 }
+
 
 function looksLikeMermaidErrorSvg(svg: string): boolean {
   return /syntax error/i.test(svg) || /error-icon|mermaid-error/i.test(svg)

@@ -10,14 +10,15 @@ Rules:
 - End with a one-sentence summary of the complete flow
 
 UML / sequence diagrams (optional, ONE block):
-- Prefer sequenceDiagram
+- Prefer sequenceDiagram (or flowchart TB for status pipelines)
 - Fence exactly as \`\`\`mermaid ... \`\`\`
 - Strict Mermaid rules:
-  - First line: sequenceDiagram
-  - participant ids: letters only (User, UI, API)
+  - First line: sequenceDiagram  OR  flowchart TB
+  - Ids: CamelCase letters only (never bare o/x)
+  - For flowchart: ALWAYS quote every label — B["CartPanel handleCreateOrder"] (ASCII only, no →)
   - Messages: A->>B: short text (no [file:line] citations inside mermaid)
   - No markdown inside mermaid
-  - Max 8 messages
+  - Max 8 messages / 10 nodes
   - Example:
 \`\`\`mermaid
 sequenceDiagram
