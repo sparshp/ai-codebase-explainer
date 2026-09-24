@@ -68,7 +68,8 @@ export const config = {
 
   llmProvider:       process.env.LLM_PROVIDER || (isProd ? 'groq' : 'ollama'),
   groqApiKey:        process.env.GROQ_API_KEY || '',
-  groqLlmModel:      process.env.GROQ_LLM_MODEL || 'llama-3.1-8b-instant',
+  // llama-3.1-8b-instant shut down for free/dev tiers (Aug 2026) → openai/gpt-oss-20b
+  groqLlmModel:      process.env.GROQ_LLM_MODEL || 'openai/gpt-oss-20b',
 
   enableRerank:      process.env.ENABLE_RERANK === 'true',
   maxExpandedQueries: parseInt(process.env.MAX_EXPANDED_QUERIES || '1'),

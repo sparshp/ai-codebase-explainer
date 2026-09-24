@@ -4,6 +4,8 @@ Ask questions about any **public GitHub repository** and get answers grounded in
 
 Paste a repo URL → we index it (parse → chunk → embed) → you chat in Lookup, Architecture, Flow, or Debug mode. Answers stream in real time and cite the chunks they used.
 
+> **Deep dive:** see **[PROJECT_GUIDE.md](./PROJECT_GUIDE.md)** for full architecture, why each technology, flow diagrams, and interview Q&A.
+
 ---
 
 ## Features
@@ -73,7 +75,7 @@ Postgres is the source of truth for chunk text. If Chroma is wiped (e.g. free-ti
 | Vectors | ChromaDB |
 | Queue | BullMQ + Redis (Upstash in prod) |
 | Embeddings | Ollama `nomic-embed-text` · HF `sentence-transformers/all-mpnet-base-v2` |
-| LLM | Ollama `llama3.2` · Groq `llama-3.1-8b-instant` |
+| LLM | Ollama `llama3.2` · Groq `openai/gpt-oss-20b` |
 | Parsing | tree-sitter (JavaScript / TypeScript) |
 
 ---
